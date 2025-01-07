@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Composers - MusicMastery App</title>
+    <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+    <header class="header-area">
+        <div class="container">
+            <div class="menu-area">
+                <nav>
+                    <ul>
+                        <li><a href="index.html">HOME</a></li>
+                        <li><a href="about.html">ALL THE PIECES</a></li>
+                        <li><a href="composers.html">COMPOSERS</a></li>
+                        <li><a href="mylist.html">MY LIST</a></li>
+                        <li><a href="login.html">SIGN OUT</a></li>
+                    </ul>
+                </nav>
+            </div>
+        </div>
+    </header>
+
+    <div class="main-content">
+        <div class="container">
+            <h1>Famous Composers</h1>
+            <input type="text" id="searchInput" placeholder="Search composers..." class="search-input">
+            <div id="composers" class="grid-container"></div>
+            <div id="pagination" class="pagination"></div>
+        </div>
+    </div>
+
+    <script>
+        const ITEMS_PER_PAGE = 12;
+        let currentPage = 1;
+        let allComposers = [];
+        let filteredComposers = [];
+        let imageCache = new Map(); 
+        function getComposerImageFilename(composerName) {
+            
+            const nameMap = {
+                'Ludwig van Beethoven': 'beethoven',
+                'Wolfgang Amadeus Mozart': 'mozart',
+                'Johann Sebastian Bach': 'bach',
+                'Frédéric François Chopin': 'chopin',
+                'Franz Liszt': 'liszt',
+                'Pyotr Ilyich Tchaikovsky': 'tchaikovsky',
+                'Johannes Brahms': 'brahms',
+                'Franz Schubert': 'schubert',
+                'Robert Schumann': 'schumann',
+                'Claude Debussy': 'debussy'
+            };
+
+            
+            const mappedName = nameMap[composerName] || 
+                composerName.split(' ').pop().toLowerCase().replace(/[^a-z]/g, '');
+            
+            
+            console.log(`Composer: ${composerName} -> Filename: ${mappedName}`);
+            
+            return mappedName;
+        }
+
+        
+        async function preloadComposerImage(composerName) {
+            const imageFilename = getComposerImageFilename(composerName);
+            const imagePath = `./../images/composers_pdp/${imageFilename}.jpg`;
+            
+            if (imageCache.has(imageFilename)) {
+                return imageCache.get(imageFilename);
+            }
+
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () => {
+                    imageCache.set(imageFilename, true);
+                    resolve(true);
+                    console.log(`Successfully preloaded: ${imagePath}`);
+                };
+                img.onerror = () => {
+                    imageCache.set(imageFilename, false);
+                    resolve(false);
+                    console.log(`Failed to preload: ${imagePath}`);
+                };
+                img.src = imagePath;
+            });
+        }
+
+        fetch('https://api.openopus.org/composer/list/pop.json')
+            .then(response => response.json())
+            .then(async data => {
+                allComposers = data.composers;
+                filteredComposers = allComposers;
+                
+                const firstPageComposers = allComposers.slice(0, ITEMS_PER_PAGE);
+                await Promise.all(firstPageComposers.map(composer => 
+                    preloadComposerImage(composer.complete_name)
+                ));
+                
+                displayComposers();
+            });
+
+        document.getElementById('searchInput').addEventListener('input', function() {
+            const searchTerm = this.value.toLowerCase();
+            filteredComposers = allComposers.filter(composer => 
+                composer.complete_name.toLowerCase().includes(searchTerm)
+            );
+            currentPage = 1;
+            displayComposers();
+        });
+
+        function displayComposers() {
+            const composersContainer = document.getElementById('composers');
+            const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+            const endIndex = startIndex + ITEMS_PER_PAGE;
+            const composersToShow = filteredComposers.slice(startIndex, endIndex);
+
+            composersContainer.innerHTML = '<div class="grid-container"></div>';
+            const gridContainer = composersContainer.querySelector('.grid-container');
+            
+            composersToShow.forEach(composer => {
+                const composerElement = document.createElement('div');
+                composerElement.className = 'composer-card';
+                const searchName = encodeURIComponent(composer.complete_name);
+                const isAdded = JSON.parse(localStorage.getItem('myComposers') || '[]')
+                    .some(item => item.id === composer.id);
+
+                const imageFilename = getComposerImageFilename(composer.complete_name);
+                composerElement.innerHTML = `
+                    <div class="composer-image">
+                        <img src="./images/composers_pdp/${imageFilename}.jpg" 
+                             alt="${composer.complete_name}"
+                             onerror="this.src='./images/default-composer.jpg'"
+                             loading="lazy">
+                    </div>
+                    <div class="composer-info">
+                        <h2>${composer.complete_name}</h2>
+                        <p class="dates">${composer.birth} - ${composer.death}</p>
+                        <div class="composer-links">
+                            <a href="https://en.wikipedia.org/wiki/${searchName}" target="_blank">Wiki</a>
+                            <a href="https://www.youtube.com/results?search_query=${searchName}" target="_blank">
+                                <img src="images/ytb.jpg" alt="YouTube" width="24" height="24">
+                            </a>
+                        </div>
+                        <button class="add-to-list ${isAdded ? 'added' : ''}" 
+                                onclick="addComposerToList('${composer.id}', '${composer.complete_name}')"
+                                ${isAdded ? 'disabled' : ''}>
+                            ${isAdded ? 'Added to List' : 'Add to List'}
+                        </button>
+                    </div>
+                `;
+                gridContainer.appendChild(composerElement);
+            });
+
+            
+            const nextPageStart = endIndex;
+            const nextPageEnd = nextPageStart + ITEMS_PER_PAGE;
+            const nextPageComposers = filteredComposers.slice(nextPageStart, nextPageEnd);
+            nextPageComposers.forEach(composer => 
+                preloadComposerImage(composer.complete_name)
+            );
+
+            updatePagination();
+        }
+
+        function updatePagination() {
+            const paginationContainer = document.getElementById('pagination');
+            const totalPages = Math.ceil(filteredComposers.length / ITEMS_PER_PAGE);
+            
+            paginationContainer.innerHTML = '';
+            for (let i = 1; i <= totalPages; i++) {
+                const button = document.createElement('button');
+                button.textContent = i;
+                button.classList.toggle('active', i === currentPage);
+                button.onclick = () => {
+                    currentPage = i;
+                    displayComposers();
+                    window.scrollTo(0, 0);
+                };
+                paginationContainer.appendChild(button);
+            }
+        }
+
+        function addComposerToList(id, name) {
+            const myComposers = JSON.parse(localStorage.getItem('myComposers') || '[]');
+            myComposers.push({
+                id,
+                name,
+                dateAdded: new Date().toISOString()
+            });
+            localStorage.setItem('myComposers', JSON.stringify(myComposers));
+            const button = event.target;
+            button.classList.add('added');
+            button.disabled = true;
+            button.textContent = 'Added to List';
+        }
+
+        document.head.insertAdjacentHTML('beforeend', `
+            <style>
+                .composer-image {
+                    position: relative;
+                }
+                
+                .composer-image::before {
+                    content: '';
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 100%;
+                    background: #f0f0f0;
+                    border-radius: 8px;
+                    opacity: 0;
+                    transition: opacity 0.3s;
+                }
+                
+                .composer-image.loading::before {
+                    opacity: 1;
+                }
+                
+                img[loading] {
+                    opacity: 0;
+                    transition: opacity 0.3s;
+                }
+                
+                img.loaded {
+                    opacity: 1;
+                }
+            </style>
+        `);
+
+        
+        document.addEventListener('load', function(e) {
+            if (e.target.tagName === 'IMG') {
+                e.target.classList.add('loaded');
+            }
+        }, true);
+    </script>
+
+    <style>
+        .grid-container {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr); 
+            gap: 20px;
+            padding: 20px 0;
+        }
+        
+        .composer-card {
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            display: flex;
+            gap: 15px;
+            align-items: start;
+        }
+
+        .composer-image {
+            flex: 0 0 100px;
+        }
+
+        .composer-image img {
+            width: 100px;
+            height: 100px;
+            object-fit: cover;
+            border-radius: 8px;
+        }
+
+        .composer-info {
+            flex: 1;
+            text-align: left;
+        }
+
+        .composer-card h2 {
+            font-size: 1.1em;
+            margin: 5px 0;
+            color: #333;
+        }
+
+        .composer-card .dates {
+            font-size: 0.9em;
+            color: #666;
+            margin: 5px 0;
+        }
+
+        .composer-links {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin: 10px 0;
+        }
+
+        .composer-links a {
+            text-decoration: none;
+            color: #e8b968;
+            font-weight: bold;
+            transition: color 0.2s;
+        }
+
+        .composer-links a:hover {
+            color: #c99845;
+        }
+
+        .add-to-list {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: 10px;
+            transition: background-color 0.3s;
+        }
+
+        .add-to-list:hover {
+            background: #45a049;
+        }
+
+        .add-to-list.added {
+            background: #888;
+            cursor: not-allowed;
+        }
+
+        
+        @media (max-width: 1200px) {
+            .grid-container {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 768px) {
+            .grid-container {
+                grid-template-columns: 1fr;
+            }
+            
+            .composer-card {
+                flex-direction: column;
+                align-items: center;
+                text-align: center;
+            }
+
+            .composer-info {
+                text-align: center;
+            }
+        }
+    </style>
+
+<footer class="footer-area">
+    <div class="container">
+        <div class="text-content">
+            <div class="footer-content">
+                <div class="footer-menus">
+                    <ul>
+                        <li><a href="https://youtu.be/CJKfLi5YZLQ?si=PAF-3JgyLBT4wtTK" target="_blank">Beginner Lessons</a></li>
+                        <li><a href="https://youtu.be/6EK-ZT17PMg?si=3wJAzXBO-gD54hMN" target="_blank">Intermediate Tutorials</a></li>
+                        <li><a href="https://youtu.be/qzEChIA_DJ0?si=u6MxT53r3xFUvJgY" target="_blank">Advanced Techniques</a></li>
+                        <li><a href="https://musescore.com" target="_blank">Sheet Music Downloads</a></li>
+                        <li><a href="https://www.apprentus.com/en-es/piano-lessons/Morocco" target="_blank">Contact an Instructor</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="copyright">
+            <p>
+                &copy; 2024 &dash;
+                <a href="#" target="_blank">Zakaria El Mazghi</a> &dash; All rights reserved
+            </p>
+        </div>
+    </div>
+</footer>
+</body>
+</html>

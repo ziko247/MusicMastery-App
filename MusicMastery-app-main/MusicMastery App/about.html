@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>ALL THE PIECES - MusicMastery App</title>
+    <link rel="stylesheet" href="css/style.css" />
+</head>
+
+<body>
+    <header class="header-area">
+        <div class="container">
+            <div class="menu-area">
+                <nav>
+                    <ul>
+                        <li><a href="index.html">HOME</a></li>
+                        <li><a href="about.html">ALL THE PIECES</a></li>
+                        <li><a href="composers.html">COMPOSERS</a></li>
+                        <li><a href="mylist.html">MY LIST</a></li>
+                        <li><a href="login.html">SIGN OUT</a></li>
+
+                    </ul>
+                </nav>
+            </div>
+        </div>
+    </header>
+    <div class="main-content">
+        
+        <div class="container">
+            <h1>All the pieces</h1>
+            <select id="composerSelect" class="composer-select">
+                <option value="">Select a Composer</option>
+            </select>
+            <input type="text" id="searchInput" placeholder="Search pieces..." class="search-input">
+            <div id="pieces"></div>
+            <div id="pagination" class="pagination"></div>
+        </div>
+    </div>
+    <script>
+        const ITEMS_PER_PAGE = 32;
+        let currentPage = 1;
+        let allWorks = [];
+        let filteredWorks = [];
+
+        fetch('https://api.openopus.org/composer/list/pop.json')
+            .then(response => response.json())
+            .then(data => {
+                const select = document.getElementById('composerSelect');
+                data.composers.forEach(composer => {
+                    const option = document.createElement('option');
+                    option.value = composer.id;
+                    option.textContent = composer.complete_name;
+                    select.appendChild(option);
+                });
+            });
+
+        document.getElementById('composerSelect').addEventListener('change', function() {
+            const composerId = this.value;
+            if (!composerId) return;
+            currentPage = 1;
+            fetchWorks(composerId);
+        });
+
+        document.getElementById('searchInput').addEventListener('input', function() {
+            const searchTerm = this.value.toLowerCase();
+            filteredWorks = allWorks.filter(work => 
+                work.title.toLowerCase().includes(searchTerm)
+            );
+            currentPage = 1;
+            displayWorks();
+        });
+
+        function fetchWorks(composerId) {
+            const piecesContainer = document.getElementById('pieces');
+            piecesContainer.innerHTML = '<div class="loading">Loading works...</div>';
+            document.getElementById('searchInput').value = ''; 
+
+            fetch(`https://api.openopus.org/work/list/composer/${composerId}/genre/all.json`)
+                .then(response => response.json())
+                .then(data => {
+                    allWorks = data.works || [];
+                    filteredWorks = allWorks; 
+                    displayWorks();
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    piecesContainer.innerHTML = '<p>Error loading works. Please try again.</p>';
+                });
+        }
+
+        function displayWorks() {
+            const piecesContainer = document.getElementById('pieces');
+            const paginationContainer = document.getElementById('pagination');
+
+            if (filteredWorks.length === 0) {
+                piecesContainer.innerHTML = '<p>No works found matching your search.</p>';
+                paginationContainer.innerHTML = '';
+                return;
+            }
+
+            const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+            const endIndex = startIndex + ITEMS_PER_PAGE;
+            const worksToShow = filteredWorks.slice(startIndex, endIndex);
+            
+            piecesContainer.innerHTML = '<div class="grid-container"></div>';
+            const gridContainer = piecesContainer.querySelector('.grid-container');
+            
+            worksToShow.forEach(work => {
+                const pieceElement = document.createElement('div');
+                pieceElement.className = 'piece';
+                const searchTitle = encodeURIComponent(work.title);
+                const isAdded = JSON.parse(localStorage.getItem('myList') || '[]')
+                    .some(item => item.title === work.title);
+
+                pieceElement.innerHTML = `
+            <h2>${work.title}</h2>
+            <p>Genre: ${work.genre}</p>
+            <div class="piece-links">
+              <a href="https://musescore.com/sheetmusic?text=${searchTitle}" target="_blank">
+                <img src="images/score.jpg" alt="Search on MuseScore" style="width: 24px; height: 24px;">
+              </a>
+              <a href="https://www.youtube.com/results?search_query=${searchTitle}" target="_blank">
+                <img src="images/ytb.jpg" alt="Search on YouTube" style="width: 24px; height: 24px;">
+              </a>
+            </div>
+            <button class="add-to-list ${isAdded ? 'added' : ''}" 
+                    onclick="addToList('${work.title}', '${work.genre}')" 
+                    ${isAdded ? 'disabled' : ''}>
+              ${isAdded ? 'Added to List' : 'Add to List'}
+            </button>
+          `;
+                gridContainer.appendChild(pieceElement);
+            });
+
+            
+            const totalPages = Math.ceil(filteredWorks.length / ITEMS_PER_PAGE);
+            paginationContainer.innerHTML = '';
+
+            for (let i = 1; i <= totalPages; i++) {
+                const button = document.createElement('button');
+                button.textContent = i;
+                button.classList.toggle('active', i === currentPage);
+                button.onclick = () => {
+                    currentPage = i;
+                    displayWorks();
+                    window.scrollTo(0, 0);
+                };
+                paginationContainer.appendChild(button);
+            }
+        }
+
+        function addToList(title, genre) {
+            const myList = JSON.parse(localStorage.getItem('myList') || '[]');
+            myList.push({
+                title,
+                genre,
+                progress: 0,
+                dateAdded: new Date().toISOString()
+            });
+            localStorage.setItem('myList', JSON.stringify(myList));
+            const button = event.target;
+            button.classList.add('added');
+            button.disabled = true;
+            button.textContent = 'Added to List';
+        }
+    </script>
+    <style>
+        .grid-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            padding: 20px 0;
+        }
+        
+        .piece {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            height: auto;
+        }
+        
+        .piece-links {
+            display: flex;
+            gap: 10px;
+            margin: 10px 0;
+        }
+        
+        .piece-links img {
+            transition: transform 0.2s;
+        }
+        
+        .piece-links img:hover {
+            transform: scale(1.1);
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #e8b968;
+            box-shadow: 0 0 5px rgba(232, 185, 104, 0.3);
+        }
+    </style>
+    <footer class="footer-area">
+        <div class="container">
+            <div class="text-content">
+                <div class="footer-content">
+                    <div class="footer-menus">
+                        <ul>
+                            <li><a href="https://youtu.be/CJKfLi5YZLQ?si=PAF-3JgyLBT4wtTK" target="_blank">Beginner Lessons</a></li>
+                            <li><a href="https://youtu.be/6EK-ZT17PMg?si=3wJAzXBO-gD54hMN" target="_blank">Intermediate Tutorials</a></li>
+                            <li><a href="https://youtu.be/qzEChIA_DJ0?si=u6MxT53r3xFUvJgY" target="_blank">Advanced Techniques</a></li>
+                            <li><a href="https://musescore.com" target="_blank">Sheet Music Downloads</a></li>
+                            <li><a href="https://www.apprentus.com/en-es/piano-lessons/Morocco" target="_blank">Contact an Instructor</a></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <div class="copyright">
+                <p>
+                    &copy; 2024 &dash;
+                    <a href="#" target="_blank">Zakaria El Mazghi</a> &dash; All rights reserved
+                </p>
+            </div>
+        </div>
+    </footer>
+</body>
+
+</html>
